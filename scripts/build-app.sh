@@ -37,7 +37,7 @@ fi
 mkdir -p "$task_app/Contents/MacOS" "$task_app/Contents/Resources"
 if [[ "$task_mode" == universal ]]; then
     lipo -create "${task_binaries[@]}" -output "$task_app/Contents/MacOS/ProtectEars"
-    lipo -verify_arch arm64 x86_64 "$task_app/Contents/MacOS/ProtectEars"
+    lipo "$task_app/Contents/MacOS/ProtectEars" -verify_arch arm64 x86_64
 else
     cp "$task_binary_dir/ProtectEars" "$task_app/Contents/MacOS/ProtectEars"
 fi
