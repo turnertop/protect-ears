@@ -92,7 +92,7 @@ struct GuardView: View {
                     Text("Turned volume down \(store.snapshot.clampCount) \(store.snapshot.clampCount == 1 ? "time" : "times") this session.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Text("Works while this app is running. Volume changes can briefly get through before correction. This is a volume-setting cap, not a measured hearing-safety limit.")
+                Text("Not proven to protect hearing or prevent hearing damage. Loud spikes can get through before correction. Works only while running; volume steps are not a measured hearing-safety limit.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {

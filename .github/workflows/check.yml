@@ -35,3 +35,21 @@ jobs:
         run: |
           codesign --verify --deep --strict --verbose=1 "dist/Protect Ears.app"
           plutil -lint "dist/Protect Ears.app/Contents/Info.plist"
+
+  package:
+    name: Universal download package
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Package universal app
+        run: zsh scripts/package-release.sh
+      - name: Verify download files
+        run: |
+          hdiutil verify "dist/release/Protect-Ears-macOS-universal.dmg"
+          unzip -t "dist/release/Protect-Ears-macOS-universal.zip"
+          cd dist/release
+          shasum -a 256 -c SHA256SUMS.txt

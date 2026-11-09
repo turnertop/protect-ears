@@ -9,11 +9,26 @@ Built for the moment when you switch from loud speakers to headphones and the vo
 
 The default is **4 of 16 volume steps (25%)**. You can select **5 steps (31.25%)**. These percentages describe the system volume setting; they are not calibrated sound-pressure levels or a guarantee of safe listening.
 
-## Run
+**We do not know whether Protect Ears will protect your hearing. It has not been proven to prevent hearing damage. Do not rely on it as hearing protection.** Read the [full disclaimer](DISCLAIMER.md).
 
-Requires macOS 13 or later and Apple's Command Line Tools. No packages, accounts, network access, audio recording, Accessibility permission, or microphone permission are needed.
+## Download and install
 
-Build from source. If you don't have Apple's Command Line Tools yet, install them with `xcode-select --install` first.
+Requires **macOS 13 or later**. The universal app supports **Apple silicon and Intel Macs**. No developer tools are needed for the download.
+
+1. Download [Protect Ears for macOS (.dmg)](https://github.com/turnertop/protect-ears/releases/latest/download/Protect-Ears-macOS-universal.dmg) from the [latest release](https://github.com/turnertop/protect-ears/releases/latest).
+2. Open the disk image and drag **Protect Ears.app** into **Applications**. Eject the disk image.
+3. Open Protect Ears from Applications. Click the ear icon in the menu bar to see the ceiling and connected devices.
+4. Optionally enable **Start at login** so it runs each time you sign in. macOS may ask you to allow the login item in System Settings.
+
+A [ZIP download](https://github.com/turnertop/protect-ears/releases/latest/download/Protect-Ears-macOS-universal.zip) and SHA-256 checksums are also available in the release. For the ZIP, extract it and move the app into Applications.
+
+**This release is ad-hoc signed and is not signed with an Apple Developer ID or notarized by Apple.** macOS may block it on first open. Only if you trust the download, follow [Apple's instructions for opening this individual app](https://support.apple.com/en-us/102445). Do not disable Gatekeeper or remove quarantine attributes to install it.
+
+The app does not require an account, network access, audio recording, Accessibility permission, or microphone permission.
+
+## Build from source
+
+Requires Apple's Command Line Tools or Xcode. If needed, install the tools with `xcode-select --install` first. No third-party packages are used.
 
 ```sh
 git clone https://github.com/turnertop/protect-ears.git
@@ -22,7 +37,9 @@ zsh scripts/build-app.sh
 open "dist/Protect Ears.app"
 ```
 
-Click the ear icon in the menu bar to see the ceiling and connected devices. Enable **Start at login** if you want it to run each time you sign in. Keep the app bundle in a stable location before enabling this. macOS may ask you to allow the login item in System Settings. Login registration uses Apple's `SMAppService` and is off until you enable it.
+When building from source, keep the app bundle in a stable location before enabling **Start at login**. Login registration uses Apple's `SMAppService` and is off until you enable it.
+
+## Selecting headphones
 
 AirPods Max are recognized by their output-device name. The app remembers their device UID after detection, including across later name changes. If your AirPods were already renamed without “AirPods Max” in the name, select their switch under **Connected outputs** once. Selecting other outputs applies the same ceiling to them.
 
@@ -59,7 +76,15 @@ For a real-device check, pause all playback and keep the headphones off your ear
 
 `Sources/VolumeGuardCore` contains the serial monitor, Core Audio adapter, and hardware-independent enforcement policy. `Sources/ProtectEars` contains the AppKit menu-bar host and SwiftUI controls. `Checks` contains the simulated-hardware checks and a dependency-free runner, so full Xcode/XCTest is unnecessary.
 
-The build script creates a locally ad-hoc-signed app in `dist`. It is built for the current Mac architecture and is not notarized for distribution. For distribution or a stable signed login-item identity, build and sign with your own Developer ID.
+The default build script creates a locally ad-hoc-signed app in `dist` for the current Mac architecture. It is not notarized. For distribution without the unidentified-developer warning or a stable signed login-item identity, build and sign with your own Developer ID and submit it for notarization.
+
+To build a universal app and create the downloadable disk image, ZIP, and checksums:
+
+```sh
+zsh scripts/package-release.sh
+```
+
+The universal app and release files are written to `dist/release/`, separately from the default local app. The package includes the MIT license, hearing-safety disclaimer, and installation instructions. The app's executable contains both `arm64` and `x86_64` slices with a macOS 13 minimum deployment target.
 
 GitHub Actions runs the simulated-hardware checks and verifies the app build on Apple silicon and Intel macOS runners. It cannot verify real Bluetooth behavior; testing with physical headphones is still necessary.
 

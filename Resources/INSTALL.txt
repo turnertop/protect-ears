@@ -1,0 +1,29 @@
+PROTECT EARS — EXPERIMENTAL macOS VOLUME GUARD
+
+INSTALL
+Requires macOS 13 or later. The app supports Apple silicon and Intel Macs.
+No developer tools are needed for this download.
+
+1. Drag Protect Ears.app into Applications.
+2. If you opened a disk image, eject it after copying.
+3. Open Protect Ears from Applications and click the ear icon in the menu bar.
+4. The default ceiling is 4 of 16 volume steps (25%). You can select 5 steps.
+5. Optionally enable Start at login after moving the app to Applications.
+
+This release is ad-hoc signed and is NOT signed with an Apple Developer ID or
+notarized by Apple. macOS may block it on first open. Only if you trust this
+download, follow Apple's instructions for allowing this individual app:
+https://support.apple.com/en-us/102445
+
+Do not disable Gatekeeper or remove quarantine attributes to install this app.
+
+DISCLAIMER
+We do not know whether Protect Ears will protect your hearing. It has not been
+proven to prevent hearing damage. Do not rely on it as hearing protection.
+The app can fail or react too late, and loud audio can still reach headphones.
+Volume steps and percentages are not measured sound-pressure or safety limits.
+
+Read DISCLAIMER.md and LICENSE, included with this download, for more detail.
+
+SOURCE AND ISSUES
+https://github.com/turnertop/protect-ears
