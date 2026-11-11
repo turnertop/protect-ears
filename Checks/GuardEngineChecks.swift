@@ -216,7 +216,7 @@ final class GuardEngineChecks {
     }
 }
 
-private final class FakeHardware: VolumeHardware {
+final class FakeHardware: VolumeHardware {
     struct Write { let deviceID: UInt32; let value: Float }
     var values: [VolumeControl: Float]
     var writes: [Write] = []
@@ -251,23 +251,23 @@ private final class FakeHardware: VolumeHardware {
 }
 
 // A dependency-free runner works with Apple's Command Line Tools, without Xcode/XCTest.
-private enum CheckRecorder {
+enum CheckRecorder {
     static var current = ""
     static var failures: [String] = []
     static func record(_ passed: Bool, _ description: String, file: StaticString, line: UInt) {
         if !passed { failures.append("\(current): \(description) at \(file):\(line)") }
     }
 }
-private func expectEqual<T: Equatable>(_ actual: T, _ expected: T, file: StaticString = #filePath, line: UInt = #line) {
+func expectEqual<T: Equatable>(_ actual: T, _ expected: T, file: StaticString = #filePath, line: UInt = #line) {
     CheckRecorder.record(actual == expected, "expected \(expected), got \(actual)", file: file, line: line)
 }
-private func expectTrue(_ value: Bool, file: StaticString = #filePath, line: UInt = #line) {
+func expectTrue(_ value: Bool, file: StaticString = #filePath, line: UInt = #line) {
     CheckRecorder.record(value, "expected true", file: file, line: line)
 }
-private func expectFalse(_ value: Bool, file: StaticString = #filePath, line: UInt = #line) {
+func expectFalse(_ value: Bool, file: StaticString = #filePath, line: UInt = #line) {
     CheckRecorder.record(!value, "expected false", file: file, line: line)
 }
-private func expectLessThanOrEqual<T: Comparable>(_ actual: T, _ expected: T, file: StaticString = #filePath, line: UInt = #line) {
+func expectLessThanOrEqual<T: Comparable>(_ actual: T, _ expected: T, file: StaticString = #filePath, line: UInt = #line) {
     CheckRecorder.record(actual <= expected, "expected \(actual) <= \(expected)", file: file, line: line)
 }
 
@@ -300,7 +300,7 @@ private enum CheckRunner {
             ("testEmergencyMuteRemainsVisibleAfterDriverRecovers", suite.testEmergencyMuteRemainsVisibleAfterDriverRecovers),
             ("testNoConnectedHeadphonesIsAWaitingState", suite.testNoConnectedHeadphonesIsAWaitingState),
             ("testSnapshotFlagsFailuresWithoutFlaggingOrdinaryMute", suite.testSnapshotFlagsFailuresWithoutFlaggingOrdinaryMute)
-        ]
+        ] + InventoryChecks().checks
         for (name, check) in checks {
             CheckRecorder.current = name
             check()

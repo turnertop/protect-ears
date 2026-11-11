@@ -5,7 +5,32 @@ import Foundation
 public struct AudioFailure: LocalizedError {
     public let operation: String
     public let status: OSStatus
-    public var errorDescription: String? { "\(operation) failed (Core Audio \(status))." }
+    public let objectID: UInt32?
+    public let propertySelector: UInt32?
+    public let propertyScope: UInt32?
+
+    public init(operation: String, status: OSStatus, objectID: UInt32? = nil,
+                propertySelector: UInt32? = nil, propertyScope: UInt32? = nil) {
+        self.operation = operation
+        self.status = status
+        self.objectID = objectID
+        self.propertySelector = propertySelector
+        self.propertyScope = propertyScope
+    }
+
+    public var errorDescription: String? {
+        var context = ["Core Audio \(status) '\(Self.code(UInt32(bitPattern: status)))'"]
+        if let objectID { context.append("object \(objectID)") }
+        if let propertySelector { context.append("property '\(Self.code(propertySelector))'") }
+        if let propertyScope { context.append("scope '\(Self.code(propertyScope))'") }
+        return "\(operation) failed (\(context.joined(separator: ", ")))."
+    }
+
+    private static func code(_ value: UInt32) -> String {
+        let bytes = [24, 16, 8, 0].map { UInt8(truncatingIfNeeded: value >> $0) }
+        return bytes.allSatisfy { (32...126).contains($0) }
+            ? String(bytes: bytes, encoding: .ascii)! : String(format: "0x%08x", value)
+    }
 }
 
 public final class AudioObservation {
@@ -15,24 +40,66 @@ public final class AudioObservation {
     deinit { cancel() }
 }
 
-public final class CoreAudioHardware: VolumeHardware {
+public final class CoreAudioHardware: VolumeHardware, OutputDeviceCatalog {
     public init() {}
 
     public func outputDevices() throws -> [OutputDevice] {
+        let inventory = scanOutputDevices()
+        if inventory.devices.isEmpty, let issue = inventory.issues.first {
+            throw NSError(domain: "ProtectEars.AudioInventory", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: issue])
+        }
+        return inventory.devices
+    }
+
+    public func scanOutputDevices(rememberedUIDs: Set<String> = [], previous: [OutputDevice] = []) -> OutputDeviceInventory {
+        OutputDeviceScanner(catalog: self).scan(rememberedUIDs: rememberedUIDs, previous: previous)
+    }
+
+    public func allDeviceIDs() throws -> [UInt32] {
+        try array(AudioObjectID(kAudioObjectSystemObject), address(kAudioHardwarePropertyDevices))
+    }
+
+    public func preferredOutputIDs() -> [UInt32] {
+        [kAudioHardwarePropertyDefaultOutputDevice, kAudioHardwarePropertyDefaultSystemOutputDevice].compactMap {
+            try? scalar(AudioObjectID(kAudioObjectSystemObject), address($0), initial: UInt32(0))
+        }.filter { $0 != kAudioObjectUnknown }
+    }
+
+    public func deviceID(forUID uid: String) throws -> UInt32? {
         let system = AudioObjectID(kAudioObjectSystemObject)
-        let ids: [AudioDeviceID] = try array(system, address(kAudioHardwarePropertyDevices))
-        return try ids.compactMap { id in
-            let streams: [AudioStreamID] = try array(id, address(kAudioDevicePropertyStreams, output: true))
-            guard !streams.isEmpty else { return nil }
-            let alive: UInt32 = try scalar(id, address(kAudioDevicePropertyDeviceIsAlive), initial: UInt32(0))
-            guard alive != 0 else { return nil }
-            return OutputDevice(
-                id: id,
-                uid: try string(id, address(kAudioDevicePropertyDeviceUID)),
-                name: try string(id, address(kAudioObjectPropertyName)),
-                channelCount: try outputChannelCount(id)
-            )
-        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        var property = address(kAudioHardwarePropertyTranslateUIDToDevice)
+        let uidString = uid as CFString
+        var qualifier = Unmanaged.passUnretained(uidString)
+        var id: AudioDeviceID = kAudioObjectUnknown
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = withExtendedLifetime(uidString) {
+            withUnsafePointer(to: &qualifier) { pointer in
+                AudioObjectGetPropertyData(system, &property,
+                    UInt32(MemoryLayout<Unmanaged<CFString>>.size), pointer, &size, &id)
+            }
+        }
+        try check(status, "Resolve output identity", objectID: system, property: property)
+        return id == kAudioObjectUnknown ? nil : id
+    }
+
+    public func describeOutputDevice(_ id: UInt32) throws -> OutputDevice? {
+        // Some input-only/virtual devices do not implement output-stream properties.
+        // Stream configuration already provides the actual output channel count.
+        var configuration = address(kAudioDevicePropertyStreamConfiguration, output: true)
+        guard AudioObjectHasProperty(id, &configuration) else { return nil }
+        let channels = try outputChannelCount(id)
+        guard channels > 0 else { return nil }
+        let alive: UInt32 = try scalar(id, address(kAudioDevicePropertyDeviceIsAlive), initial: UInt32(0))
+        guard alive != 0 else { return nil }
+        return OutputDevice(id: id, uid: try string(id, address(kAudioDevicePropertyDeviceUID)),
+                            name: try string(id, address(kAudioObjectPropertyName)), channelCount: channels)
+    }
+
+    public func resetAudioClient() throws {
+        // This app performs no audio I/O. Unload resets only this process's HAL;
+        // callers must remove its listeners and discard object IDs first.
+        try check(AudioHardwareUnload(), "Reconnect audio client")
     }
 
     public func defaultOutputID() -> UInt32? {
@@ -144,11 +211,11 @@ public final class CoreAudioHardware: VolumeHardware {
     private func outputChannelCount(_ id: AudioDeviceID) throws -> UInt32 {
         var property = address(kAudioDevicePropertyStreamConfiguration, output: true)
         var size: UInt32 = 0
-        try check(AudioObjectGetPropertyDataSize(id, &property, 0, nil, &size), "Read output configuration size")
+        try check(AudioObjectGetPropertyDataSize(id, &property, 0, nil, &size), "Read output configuration size", objectID: id, property: property)
         guard size >= MemoryLayout<AudioBufferList>.size else { return 0 }
         let memory = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
         defer { memory.deallocate() }
-        try check(AudioObjectGetPropertyData(id, &property, 0, nil, &size, memory), "Read output configuration")
+        try check(AudioObjectGetPropertyData(id, &property, 0, nil, &size, memory), "Read output configuration", objectID: id, property: property)
         let buffers = UnsafeMutableAudioBufferListPointer(memory.assumingMemoryBound(to: AudioBufferList.self))
         return buffers.reduce(UInt32(0)) { $0 + $1.mNumberChannels }
     }
@@ -160,7 +227,7 @@ public final class CoreAudioHardware: VolumeHardware {
         let status = withUnsafeMutablePointer(to: &value) {
             AudioObjectGetPropertyData(id, &property, 0, nil, &size, $0)
         }
-        try check(status, "Read audio property")
+        try check(status, "Read audio property", objectID: id, property: property)
         return value
     }
 
@@ -172,11 +239,11 @@ public final class CoreAudioHardware: VolumeHardware {
     private func array<T>(_ id: AudioObjectID, _ property: AudioObjectPropertyAddress) throws -> [T] {
         var property = property
         var size: UInt32 = 0
-        try check(AudioObjectGetPropertyDataSize(id, &property, 0, nil, &size), "Read audio list size")
+        try check(AudioObjectGetPropertyDataSize(id, &property, 0, nil, &size), "Read audio list size", objectID: id, property: property)
         guard size > 0 else { return [] }
         let memory = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<T>.alignment)
         defer { memory.deallocate() }
-        try check(AudioObjectGetPropertyData(id, &property, 0, nil, &size, memory), "Read audio list")
+        try check(AudioObjectGetPropertyData(id, &property, 0, nil, &size, memory), "Read audio list", objectID: id, property: property)
         return Array(UnsafeBufferPointer(start: memory.assumingMemoryBound(to: T.self),
                                          count: Int(size) / MemoryLayout<T>.stride))
     }
@@ -188,7 +255,11 @@ public final class CoreAudioHardware: VolumeHardware {
                                    mElement: element)
     }
 
-    private func check(_ status: OSStatus, _ operation: String) throws {
-        if status != noErr { throw AudioFailure(operation: operation, status: status) }
+    private func check(_ status: OSStatus, _ operation: String, objectID: UInt32? = nil,
+                       property: AudioObjectPropertyAddress? = nil) throws {
+        if status != noErr {
+            throw AudioFailure(operation: operation, status: status, objectID: objectID,
+                               propertySelector: property?.mSelector, propertyScope: property?.mScope)
+        }
     }
 }

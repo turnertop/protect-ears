@@ -54,11 +54,13 @@ struct GuardView: View {
                         .tracking(1.3).foregroundStyle(.secondary)
                     Spacer()
                     Button(action: store.refresh) { Image(systemName: "arrow.clockwise") }
-                        .buttonStyle(.plain).help("Check devices again")
+                        .buttonStyle(.plain).help("Check devices and recover the audio connection if needed")
                         .accessibilityLabel("Refresh connected devices")
                 }
                 if store.snapshot.reports.isEmpty {
-                    Text("Connect your AirPods Max to this Mac to check the volume guard.")
+                    Text(store.snapshot.error == nil
+                         ? "Connect your AirPods Max to this Mac to check the volume guard."
+                         : "Audio detection is unavailable. The headphone ceiling cannot be verified.")
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {

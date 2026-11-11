@@ -6,10 +6,18 @@ import VolumeGuardCore
 private func diagnostics() -> Int32 {
     let hardware = CoreAudioHardware()
     do {
-        let devices = try hardware.outputDevices()
+        print("Audio diagnostics. No volume or mute settings are changed.")
+        if CommandLine.arguments.contains("--reset-audio-client") {
+            // Exercise recovery in this diagnostic process, leaving other apps alone.
+            _ = hardware.scanOutputDevices()
+            try hardware.resetAudioClient()
+            print("Reinitialized this diagnostic process's Core Audio connection.")
+        }
+        let inventory = hardware.scanOutputDevices()
+        let devices = inventory.devices
         let defaultID = hardware.defaultOutputID()
-        print("Read-only audio diagnostics. No volume or mute settings are changed.")
         print("AirPods Max detection uses the device name, then remembers its UID in the app.")
+        for issue in inventory.issues { print("Inventory warning: \(issue)") }
         for device in devices {
             let controls = try hardware.volumeControls(for: device)
             let volumes = controls.map { control -> String in
@@ -19,9 +27,13 @@ private func diagnostics() -> Int32 {
             print("\(device.id == defaultID ? "*" : " ") \(device.name)")
             print("  AirPods Max: \(device.isAirPodsMax); output channels: \(device.channelCount)")
             print("  Volume controls: \(volumes.isEmpty ? "none" : volumes.joined(separator: ", "))")
+            if device.isAirPodsMax {
+                let resolved = try hardware.deviceID(forUID: device.uid)
+                print("  Independent identity lookup: \(resolved == device.id ? "matches" : "unavailable")")
+            }
         }
         if devices.isEmpty { print("No live output devices found.") }
-        return 0
+        return inventory.devices.isEmpty && !inventory.issues.isEmpty ? 1 : 0
     } catch {
         fputs("Audio diagnostics failed: \(error.localizedDescription)\n", stderr)
         return 1

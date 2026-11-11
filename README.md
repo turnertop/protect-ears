@@ -47,6 +47,8 @@ AirPods Max are recognized by their output-device name. The app remembers their 
 
 - Monitors all selected connected output devices, including when an app chooses an output independently of the system default.
 - Responds to volume notifications, device changes, output-route changes, wake, and Core Audio service restarts.
+- Inspects devices independently, so one unsupported or disappearing virtual device cannot cancel the whole scan. Uses the default outputs and remembered headphone identities as fallback discovery paths.
+- Reinitializes this app's Core Audio connection after repeated discovery failures. Refresh requests the same recovery, with a cooldown to prevent reset loops.
 - Checks output volume every 250 ms as a fallback and checks the device list every second. These intervals are scheduling targets, not real-time deadlines.
 - Checks main and individual output-channel controls when exposed by the device, falling back to its virtual main-volume control.
 - Lowers values above the ceiling and verifies the result. It never raises a quiet volume or unmutes a device.
@@ -69,6 +71,10 @@ zsh scripts/check.sh
 ```
 
 The check runner simulates device controls, repeated spikes, channel imbalance, UID-based reconnection, renaming, read/write failures, rejected writes, hardware rounding, and emergency muting. It does not change real devices. `--diagnose` lists live output devices and volume controls without changing them.
+
+If headphones are connected but missing from the app, click Refresh. Version 1.0.1 and later can recover this app's Core Audio connection when discovery fails. An error includes the failing audio object and property so a future report can identify the affected query. If detection is unavailable, the volume ceiling cannot be verified.
+
+For a developer check of the process-local recovery API, run the diagnostic with `--diagnose --reset-audio-client`. It reinitializes only that diagnostic process's Core Audio connection and does not change volume or mute settings.
 
 For a real-device check, pause all playback and keep the headphones off your ears. With the app running and the AirPods selected, check that moving the system-volume slider above the ceiling is corrected. Repeat after reconnecting and when entering/leaving a Discord call. This verifies correction behavior, not absence of a transient; do not test with loud sound.
 
