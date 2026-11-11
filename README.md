@@ -65,6 +65,8 @@ A volume percentage also cannot prevent an app from making its audio louder *wit
 
 ## Verify without playing sound
 
+Completed checks and the remaining reconnect, sleep/wake, Discord, and long-session coverage are tracked in the [verification checklist](docs/verification-checklist.md). It can be picked up later, one scenario at a time.
+
 ```sh
 zsh scripts/check.sh
 "dist/Protect Ears.app/Contents/MacOS/ProtectEars" --diagnose
