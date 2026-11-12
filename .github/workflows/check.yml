@@ -29,6 +29,10 @@ jobs:
           persist-credentials: false
       - name: Run simulated-hardware checks
         run: zsh scripts/check.sh
+      - name: Check local installer
+        run: |
+          python3 -m py_compile scripts/install-local.py
+          python3 scripts/install-local.py --help
       - name: Build app
         run: zsh scripts/build-app.sh
       - name: Verify app bundle

@@ -4,6 +4,7 @@ dist/
 .swiftpm/
 *.dSYM/
 *.log
+__pycache__/
 .env
 .env.*
 !.env.example

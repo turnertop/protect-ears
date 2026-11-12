@@ -10,6 +10,13 @@ No developer tools are needed for this download.
 4. The default ceiling is 4 of 16 volume steps (25%). You can select 5 steps.
 5. Optionally enable Start at login after moving the app to Applications.
 
+UPDATES
+Quit the old app, replace it with the download, and open the updated app once.
+Version 1.0.3 and later remember your Start at login choice and restore a missing
+registration on the first launch after an update. macOS approval is still required
+if requested. If upgrading from 1.0.2 or earlier, check the login switch once:
+those older versions did not save this preference for migration.
+
 This release is ad-hoc signed and is NOT signed with an Apple Developer ID or
 notarized by Apple. macOS may block it on first open. Only if you trust this
 download, follow Apple's instructions for allowing this individual app:

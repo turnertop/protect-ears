@@ -7,7 +7,8 @@ let package = Package(
     products: [.executable(name: "ProtectEars", targets: ["ProtectEars"])],
     targets: [
         .target(name: "VolumeGuardCore"),
-        .executableTarget(name: "ProtectEars", dependencies: ["VolumeGuardCore"]),
-        .executableTarget(name: "GuardEngineChecks", dependencies: ["VolumeGuardCore"], path: "Checks")
+        .target(name: "LoginItemSupport"),
+        .executableTarget(name: "ProtectEars", dependencies: ["VolumeGuardCore", "LoginItemSupport"]),
+        .executableTarget(name: "GuardEngineChecks", dependencies: ["VolumeGuardCore", "LoginItemSupport"], path: "Checks")
     ]
 )

@@ -46,7 +46,12 @@ fi
 cp "$task_root/Resources/Info.plist" "$task_app/Contents/Info.plist"
 cp "$task_root/LICENSE" "$task_root/DISCLAIMER.md" "$task_root/Resources/INSTALL.txt" \
     "$task_app/Contents/Resources/"
-codesign --force --sign - "$task_app"
+task_sign_identity="${PROTECT_EARS_SIGN_IDENTITY:--}"
+task_sign_options=()
+if [[ "$task_sign_identity" != - ]]; then
+    task_sign_options=(--options runtime --timestamp)
+fi
+codesign --force --sign "$task_sign_identity" "${task_sign_options[@]}" "$task_app"
 codesign --verify --deep --strict "$task_app"
 plutil -lint "$task_app/Contents/Info.plist"
 printf 'Built %s\n' "$task_app"

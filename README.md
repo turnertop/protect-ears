@@ -39,6 +39,14 @@ open "dist/Protect Ears.app"
 
 When building from source, keep the app bundle in a stable location before enabling **Start at login**. Login registration uses Apple's `SMAppService` and is off until you enable it.
 
+## Keeping Start at login through updates
+
+From **v1.0.3**, the app saves your On/Off choice. Quit the old app, replace it, and **open the updated app once**. If an update lost its login registration, the app restores your saved On choice. Off stays off. macOS approval requirements still apply; failed registration shows an error and a Retry button.
+
+Versions **1.0.2 and earlier did not save this preference**. When upgrading from those versions, check the switch once after installation. A missing old registration is not treated as permission to enable login automatically.
+
+Removing a login item in System Settings is recognized when the app next opens or becomes active. Locally signed builds cannot reliably distinguish a removal made while the app was closed from registration lost during a manual replacement. Open the existing app once after removing its login item and before replacing it, or use the local update script below, which checks the old registration before replacement. Developer ID signing provides a stable app identity across builds.
+
 ## Selecting headphones
 
 AirPods Max are recognized by their output-device name. The app remembers their device UID after detection, including across later name changes. If your AirPods were already renamed without “AirPods Max” in the name, select their switch under **Connected outputs** once. Selecting other outputs applies the same ceiling to them.
@@ -55,6 +63,7 @@ AirPods Max are recognized by their output-device name. The app remembers their 
 - Lowers values above the ceiling and verifies the result. It never raises a quiet volume or unmutes a device.
 - Attempts to mute the selected device if the volume cannot be read, capped, or verified. A warning remains visible after an emergency mute; you must inspect and unmute manually.
 - Keeps preferences locally. It does not play any test sounds or send any data.
+- Remembers the Start at login choice and repairs a missing registration once on the first launch of a changed build, without repeatedly registering on activation or overriding pending macOS approval.
 
 ## Limits
 
@@ -94,6 +103,17 @@ zsh scripts/package-release.sh
 ```
 
 The universal app and release files are written to `dist/release/`, separately from the default local app. The package includes the MIT license, hearing-safety disclaimer, and installation instructions. The app's executable contains both `arm64` and `x86_64` slices with a macOS 13 minimum deployment target.
+
+To update an existing local build, stage the app separately and use the installer:
+
+```sh
+zsh scripts/build-app.sh --universal
+python3 scripts/install-local.py
+```
+
+The installer verifies the staged signature, asks the old app to preserve its login choice and unregister before it is backed up, stops that exact app, installs the replacement, and opens it. This keeps backup copies from accumulating as login items. For the one-time migration from v1.0.2 or earlier, specify `--legacy-login-on` or `--legacy-login-off` to record your known choice. Older copies may already have left duplicate login entries; remove those old entries in System Settings once.
+
+If you have an existing signing certificate, set `PROTECT_EARS_SIGN_IDENTITY` to its exact identity when building or packaging. The build then uses that identity with hardened runtime and a timestamp. The default remains ad-hoc signing. Developer ID signing and notarization are separate distribution steps; the supplied downloads are not notarized.
 
 GitHub Actions runs the simulated-hardware checks and verifies the app build on Apple silicon and Intel macOS runners. It cannot verify real Bluetooth behavior; testing with physical headphones is still necessary.
 

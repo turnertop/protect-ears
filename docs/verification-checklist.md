@@ -1,6 +1,6 @@
 # Verification checklist
 
-Last updated: **2026-11-11**. Current implementation: **v1.0.2**. Previous baseline: **v1.0.1**, commit `19102ee`.
+Last updated: **2026-11-11**. Current implementation: **v1.0.3**. Previous baseline: **v1.0.1**, commit `19102ee`.
 
 This is a backlog for later; nothing here needs to be done immediately. Keep the current four/five-step volume guard and focus on detection, reconnects, and stability.
 
@@ -27,6 +27,25 @@ The live test used a programmatic volume request. It did **not** establish keybo
 - [x] Both universal slices built locally; ad-hoc signature, DMG integrity, ZIP integrity, and archive checksums passed.
 
 The volume requests used Core Audio, not physical keyboard or Digital Crown input. The remaining physical reconnect, profile-change, wake, login, and long-session checks below still apply. A separate read-only diagnostic is not evidence that the running app enforced a cap.
+
+## v1.0.3 login persistence checks
+
+- [x] All **69 simulated checks** passed locally, including the existing volume checks and 20 login checks covering migration, saved On/Off choices, update recovery, observed external removal, pending/revoked approval, failed On/Off requests, retry limits, update handoff, rollback, and unchanged-state write avoidance.
+- [x] A separate disposable app reproduced the macOS 14.4.1 behavior: a differently signed replacement at the same location reported its login item missing; registering the replacement restored eligibility. Removing its entry in System Settings also reported missing, confirming that these cases cannot always be distinguished from status alone.
+- [x] The production login controller was exercised with real macOS registrations in a separate app: On survived a signed-build replacement and repeated launch; Off survived a second replacement. Old entries were unregistered before their app bundles were moved. The disposable entries and their saved preference domain were removed afterward. No audio settings were changed.
+- [x] The user's existing On choice was confirmed in the app before migration. Three legacy Protect Ears startup entries were removed, the known On choice was migrated, and v1.0.3 restored its registration on launch.
+- [x] The **actual Protect Ears app** then went through a same-release reinstall using `scripts/install-local.py`: the old app prepared its On preference and unregistered, the replacement restored On without touching the switch, and System Settings showed **one** current Protect Ears entry afterward. Read-only `--login-status` returned macOS status **1 (enabled)**, saved choice **true**, and no pending handoff. The saved ceiling remained **five**.
+- [ ] Actual logout/login or reboot launch is **NOT RUN**. The checks above establish registration and replacement behavior, not that the next login has been observed.
+
+For manual replacements of locally signed builds, open the updated app once. If an entry is removed in System Settings while the app is closed, open the old app once before replacing it, or use the local installer to capture that Off state. Without stable signing, a closed-app removal followed immediately by a manual replacement can be indistinguishable from update loss. macOS approval is not automatically cleared by the repair.
+
+Read-only login diagnostics (v1.0.3+):
+
+```sh
+"dist/Protect Ears.app/Contents/MacOS/ProtectEars" --login-status
+```
+
+`requested` is the saved preference; `status` is the actual macOS registration state: 0 not registered, 1 enabled, 2 requires approval, 3 not found. A saved On choice alone does not establish eligibility or prove a login launch.
 
 ## Remaining checks
 

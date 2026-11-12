@@ -1,4 +1,5 @@
 import AppKit
+import LoginItemSupport
 import ServiceManagement
 import SwiftUI
 import VolumeGuardCore
@@ -6,12 +7,14 @@ import VolumeGuardCore
 final class GuardStore: ObservableObject {
     @Published private(set) var snapshot = GuardSnapshot()
     @Published private(set) var limit: VolumeLimit
-    @Published private(set) var launchStatus = SMAppService.mainApp.status
-    @Published var loginError: String?
+    @Published private(set) var login = LoginItemSnapshot()
 
     private let defaults = UserDefaults.standard
     private var pinnedUIDs: Set<String>
     private var observers: [NSObjectProtocol] = []
+    private lazy var loginController = LoginItemController(
+        service: SystemLoginItemService(), preferences: DefaultsLoginItemPreferences(),
+        build: LoginItemBuild.identifier())
     private lazy var monitor = GuardMonitor { [weak self] snapshot, learned in
         guard let self else { return }
         if self.snapshot != snapshot { self.snapshot = snapshot }
@@ -28,6 +31,7 @@ final class GuardStore: ObservableObject {
 
     func start() {
         monitor.start(limit: limit, pinnedUIDs: pinnedUIDs)
+        login = loginController.restoreAfterLaunch()
         for name in [NSWorkspace.didWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification] {
             observers.append(NSWorkspace.shared.notificationCenter.addObserver(
                 forName: name, object: nil, queue: .main
@@ -36,8 +40,9 @@ final class GuardStore: ObservableObject {
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            self?.launchStatus = SMAppService.mainApp.status
-            self?.monitor.refresh()
+            guard let self else { return }
+            self.login = self.loginController.refresh()
+            self.monitor.refresh()
         })
     }
 
@@ -57,16 +62,8 @@ final class GuardStore: ObservableObject {
     }
 
     func setStartAtLogin(_ enabled: Bool) {
-        do {
-            if enabled { try SMAppService.mainApp.register() }
-            else { try SMAppService.mainApp.unregister() }
-            launchStatus = SMAppService.mainApp.status
-            loginError = nil
-            if launchStatus == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
-        } catch {
-            launchStatus = SMAppService.mainApp.status
-            loginError = error.localizedDescription
-        }
+        login = loginController.setEnabled(enabled)
+        if login.needsApproval { SMAppService.openSystemSettingsLoginItems() }
     }
 
     func refresh() { monitor.refresh() }

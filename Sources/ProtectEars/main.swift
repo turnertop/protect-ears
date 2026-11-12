@@ -1,5 +1,7 @@
 import AppKit
 import Combine
+import LoginItemSupport
+import ServiceManagement
 import SwiftUI
 import VolumeGuardCore
 
@@ -110,7 +112,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 }
 
-if CommandLine.arguments.contains("--diagnose") {
+if CommandLine.arguments.contains("--login-status") || CommandLine.arguments.contains("--prepare-for-update")
+    || CommandLine.arguments.contains("--restore-login-registration") {
+    let controller = LoginItemController(service: SystemLoginItemService(),
+                                         preferences: DefaultsLoginItemPreferences(), build: LoginItemBuild.identifier())
+    // Status is read-only: do not migrate, repair, or change a login preference.
+    if CommandLine.arguments.contains("--login-status") {
+        let record = DefaultsLoginItemPreferences().record
+        let payload: [String: Any] = ["status": SMAppService.mainApp.status.rawValue,
+                                      "requested": record.map { $0.requested as Any } ?? NSNull(),
+                                      "preparedForUpdate": record?.preparedForUpdate ?? false]
+        let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        print(String(decoding: data, as: UTF8.self))
+    } else {
+        let preparing = CommandLine.arguments.contains("--prepare-for-update")
+        let result = preparing ? controller.prepareForUpdate() : controller.restoreAfterLaunch()
+        if let error = result.error { fputs("\(error)\n", stderr); exit(1) }
+        print("\(preparing ? "Prepared" : "Restored") login preference: \(result.requested ? "on" : "off").")
+    }
+    exit(0)
+} else if CommandLine.arguments.contains("--diagnose") {
     exit(diagnostics())
 } else {
     let app = NSApplication.shared

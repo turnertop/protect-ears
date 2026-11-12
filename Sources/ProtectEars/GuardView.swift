@@ -80,14 +80,17 @@ struct GuardView: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 Toggle("Start at login", isOn: Binding(
-                    get: { store.launchStatus == .enabled || store.launchStatus == .requiresApproval },
+                    get: { store.login.requested },
                     set: { store.setStartAtLogin($0) }
                 )).toggleStyle(.switch).controlSize(.small)
-                if store.launchStatus == .requiresApproval {
+                if store.login.needsApproval {
                     Button("Allow Protect Ears in Login Items…") { SMAppService.openSystemSettingsLoginItems() }
                         .font(.caption)
                 }
-                if let error = store.loginError {
+                if store.login.needsRepair {
+                    Button("Retry Start at login") { store.setStartAtLogin(store.login.requested) }.font(.caption)
+                }
+                if let error = store.login.error {
                     Text(error).font(.caption).foregroundStyle(.orange)
                 }
                 if store.snapshot.clampCount > 0 {

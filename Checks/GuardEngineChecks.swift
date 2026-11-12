@@ -322,13 +322,13 @@ private enum CheckRunner {
             ("testEmergencyMuteRemainsVisibleAfterDriverRecovers", suite.testEmergencyMuteRemainsVisibleAfterDriverRecovers),
             ("testNoConnectedHeadphonesIsAWaitingState", suite.testNoConnectedHeadphonesIsAWaitingState),
             ("testSnapshotFlagsFailuresWithoutFlaggingOrdinaryMute", suite.testSnapshotFlagsFailuresWithoutFlaggingOrdinaryMute)
-        ] + InventoryChecks().checks + MonitorChecks().checks
+        ] + InventoryChecks().checks + MonitorChecks().checks + LoginItemChecks().checks
         for (name, check) in checks {
             CheckRecorder.current = name
             check()
         }
         for failure in CheckRecorder.failures { fputs("FAIL: \(failure)\n", stderr) }
-        print("\(checks.count) hardware-simulated checks; \(CheckRecorder.failures.count) failures. No real audio settings changed.")
+        print("\(checks.count) simulated checks; \(CheckRecorder.failures.count) failures. No real audio or login settings changed.")
         exit(CheckRecorder.failures.isEmpty ? 0 : 1)
     }
 }
