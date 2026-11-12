@@ -124,6 +124,22 @@ final class GuardEngineChecks {
         expectTrue(hardware.writes.isEmpty)
     }
 
+    func testQuietPassReadsEachControlOnce() {
+        let hardware = FakeHardware(values: [left: 0.2, right: 0.2])
+        _ = GuardEngine(hardware: hardware).enforce(devices: [device()], limit: .fiveSteps, pinnedUIDs: [])
+        expectEqual(hardware.readCount, 2)
+        expectTrue(hardware.writes.isEmpty)
+    }
+
+    func testStaleIdentityNeverMutesAnUnrelatedDevice() {
+        let hardware = FakeHardware(values: [left: 0.8])
+        hardware.staleIdentity = true
+        let result = GuardEngine(hardware: hardware).enforce(devices: [device()], limit: .fiveSteps, pinnedUIDs: [])
+        expectTrue(hardware.writes.isEmpty)
+        expectEqual(hardware.muteAttempts, 0)
+        expectEqual(result.reports.first?.state, .failed)
+    }
+
     func testReadFailureAttemptsMuteAndReportsAttention() {
         let hardware = FakeHardware(values: [left: 0.8])
         hardware.failRead = true
@@ -227,6 +243,8 @@ final class FakeHardware: VolumeHardware {
     var failWrite = false
     var ignoreWrites = false
     var quantizationOffset: Float = 0
+    var readCount = 0
+    var staleIdentity = false
 
     init(values: [VolumeControl: Float]) { self.values = values }
     func outputDevices() throws -> [OutputDevice] { [] }
@@ -234,10 +252,12 @@ final class FakeHardware: VolumeHardware {
         values.keys.sorted { $0.element < $1.element }
     }
     func readVolume(_ control: VolumeControl, on device: OutputDevice) throws -> Float {
+        readCount += 1
         if failRead { throw NSError(domain: "Simulated read failure", code: 1) }
         return values[control]!
     }
     func writeVolume(_ value: Float, control: VolumeControl, on device: OutputDevice) throws {
+        if staleIdentity { throw StaleAudioDevice() }
         if failWrite { throw NSError(domain: "Simulated write failure", code: 2) }
         writes.append(Write(deviceID: device.id, value: value))
         if !ignoreWrites { values[control] = value + quantizationOffset }
@@ -290,6 +310,8 @@ private enum CheckRunner {
             ("testEveryLaterSpikeIsClampedAgain", suite.testEveryLaterSpikeIsClampedAgain),
             ("testLoweringCeilingTakesEffectImmediately", suite.testLoweringCeilingTakesEffectImmediately),
             ("testRaisingCeilingNeverRaisesActualVolume", suite.testRaisingCeilingNeverRaisesActualVolume),
+            ("testQuietPassReadsEachControlOnce", suite.testQuietPassReadsEachControlOnce),
+            ("testStaleIdentityNeverMutesAnUnrelatedDevice", suite.testStaleIdentityNeverMutesAnUnrelatedDevice),
             ("testReadFailureAttemptsMuteAndReportsAttention", suite.testReadFailureAttemptsMuteAndReportsAttention),
             ("testWriteFailureDoesNotClaimCapWasApplied", suite.testWriteFailureDoesNotClaimCapWasApplied),
             ("testMissingVolumeControlsAttemptMute", suite.testMissingVolumeControlsAttemptMute),
@@ -300,7 +322,7 @@ private enum CheckRunner {
             ("testEmergencyMuteRemainsVisibleAfterDriverRecovers", suite.testEmergencyMuteRemainsVisibleAfterDriverRecovers),
             ("testNoConnectedHeadphonesIsAWaitingState", suite.testNoConnectedHeadphonesIsAWaitingState),
             ("testSnapshotFlagsFailuresWithoutFlaggingOrdinaryMute", suite.testSnapshotFlagsFailuresWithoutFlaggingOrdinaryMute)
-        ] + InventoryChecks().checks
+        ] + InventoryChecks().checks + MonitorChecks().checks
         for (name, check) in checks {
             CheckRecorder.current = name
             check()

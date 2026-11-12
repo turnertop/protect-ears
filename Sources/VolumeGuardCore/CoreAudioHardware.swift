@@ -35,12 +35,21 @@ public struct AudioFailure: LocalizedError {
 
 public final class AudioObservation {
     private var cancelBlock: (() -> Void)?
-    init(cancel: @escaping () -> Void) { cancelBlock = cancel }
+    public init(cancel: @escaping () -> Void) { cancelBlock = cancel }
     public func cancel() { cancelBlock?(); cancelBlock = nil }
     deinit { cancel() }
 }
 
-public final class CoreAudioHardware: VolumeHardware, OutputDeviceCatalog {
+public final class CoreAudioHardware: GuardMonitoringHardware, OutputDeviceCatalog {
+    private struct DeviceKey: Hashable {
+        let id: UInt32
+        let uid: String
+        let channels: UInt32
+        init(_ device: OutputDevice) { id = device.id; uid = device.uid; channels = device.channelCount }
+    }
+    private let cacheLock = NSLock()
+    private var volumeCache: [DeviceKey: [VolumeControl]] = [:]
+    private var muteCache: [DeviceKey: [UInt32]] = [:]
     public init() {}
 
     public func outputDevices() throws -> [OutputDevice] {
@@ -99,6 +108,7 @@ public final class CoreAudioHardware: VolumeHardware, OutputDeviceCatalog {
     public func resetAudioClient() throws {
         // This app performs no audio I/O. Unload resets only this process's HAL;
         // callers must remove its listeners and discard object IDs first.
+        invalidateControlCache(deviceID: nil)
         try check(AudioHardwareUnload(), "Reconnect audio client")
     }
 
@@ -108,6 +118,8 @@ public final class CoreAudioHardware: VolumeHardware, OutputDeviceCatalog {
     }
 
     public func volumeControls(for device: OutputDevice) throws -> [VolumeControl] {
+        let key = DeviceKey(device)
+        if let cached = locked({ volumeCache[key] }) { return cached }
         // Include individual channels even when a main control exists, so an
         // asymmetric channel cannot hide behind an average volume reading.
         let direct = (0...device.channelCount).compactMap { element -> VolumeControl? in
@@ -115,17 +127,29 @@ public final class CoreAudioHardware: VolumeHardware, OutputDeviceCatalog {
             return AudioObjectHasProperty(device.id, &property)
                 ? VolumeControl(selector: property.mSelector, element: element) : nil
         }
-        if !direct.isEmpty { return direct }
         var virtual = address(kAudioHardwareServiceDeviceProperty_VirtualMainVolume, output: true)
-        return AudioObjectHasProperty(device.id, &virtual)
+        let fallback = AudioObjectHasProperty(device.id, &virtual)
             ? [VolumeControl(selector: virtual.mSelector, element: 0)] : []
+        let controls = direct.isEmpty ? fallback : direct
+        // Bound the cache even if object IDs change repeatedly during reconnection.
+        locked {
+            volumeCache = volumeCache.filter { $0.key.id != device.id }
+            if !controls.isEmpty { volumeCache[key] = controls }
+        }
+        return controls
     }
 
     public func readVolume(_ control: VolumeControl, on device: OutputDevice) throws -> Float {
-        try scalar(device.id, address(control.selector, output: true, element: control.element), initial: Float(0))
+        do {
+            return try scalar(device.id, address(control.selector, output: true, element: control.element), initial: Float(0))
+        } catch {
+            invalidateControlCache(deviceID: device.id)
+            throw error
+        }
     }
 
     public func writeVolume(_ value: Float, control: VolumeControl, on device: OutputDevice) throws {
+        try verifyIdentity(device)
         var property = address(control.selector, output: true, element: control.element)
         var writable: DarwinBoolean = false
         try check(AudioObjectIsPropertySettable(device.id, &property, &writable), "Check volume control")
@@ -138,6 +162,7 @@ public final class CoreAudioHardware: VolumeHardware, OutputDeviceCatalog {
     }
 
     public func emergencyMute(_ device: OutputDevice) -> Bool {
+        guard (try? verifyIdentity(device)) != nil else { return false }
         if isMuted(device) { return true }
         let elements = muteElements(device)
         guard !elements.isEmpty else { return false }
@@ -167,27 +192,36 @@ public final class CoreAudioHardware: VolumeHardware, OutputDeviceCatalog {
             && channelStates.allSatisfy { $0.1 }
     }
 
-    public func observeTopology(on queue: DispatchQueue, handler: @escaping () -> Void) -> [AudioObservation] {
+    public func observeTopology(on queue: DispatchQueue, handler: @escaping (AudioSystemChange) -> Void) -> [AudioObservation] {
         [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultOutputDevice,
-         kAudioHardwarePropertyDefaultSystemOutputDevice, kAudioHardwarePropertyServiceRestarted].compactMap {
-            observe(AudioObjectID(kAudioObjectSystemObject), address($0), on: queue, handler: handler)
+         kAudioHardwarePropertyDefaultSystemOutputDevice, kAudioHardwarePropertyServiceRestarted].compactMap { selector in
+            let change: AudioSystemChange = selector == kAudioHardwarePropertyServiceRestarted
+                ? .serviceRestarted : (selector == kAudioHardwarePropertyDevices ? .devices : .output)
+            return observe(AudioObjectID(kAudioObjectSystemObject), address(selector), on: queue) { handler(change) }
         }
     }
 
     public func observeDevice(_ device: OutputDevice, on queue: DispatchQueue,
-                              handler: @escaping () -> Void) -> [AudioObservation] {
+                              handler: @escaping (AudioDeviceChange) -> Void) -> [AudioObservation] {
         var properties = [
             address(kAudioDevicePropertyDeviceHasChanged),
             address(kAudioDevicePropertyDeviceIsAlive),
             address(kAudioDevicePropertyStreamConfiguration, output: true),
             address(kAudioDevicePropertyNominalSampleRate)
         ]
+        var observations = properties.compactMap { property in
+            observe(device.id, property, on: queue) { handler(.configuration) }
+        }
+        properties.removeAll(keepingCapacity: true)
         for element in 0...device.channelCount {
             properties.append(address(kAudioDevicePropertyVolumeScalar, output: true, element: element))
             properties.append(address(kAudioDevicePropertyMute, output: true, element: element))
         }
         properties.append(address(kAudioHardwareServiceDeviceProperty_VirtualMainVolume, output: true))
-        return properties.compactMap { observe(device.id, $0, on: queue, handler: handler) }
+        observations += properties.compactMap { property in
+            observe(device.id, property, on: queue) { handler(.volume) }
+        }
+        return observations
     }
 
     private func observe(_ id: AudioObjectID, _ property: AudioObjectPropertyAddress,
@@ -202,10 +236,42 @@ public final class CoreAudioHardware: VolumeHardware, OutputDeviceCatalog {
     }
 
     private func muteElements(_ device: OutputDevice) -> [UInt32] {
-        (0...device.channelCount).filter {
+        let key = DeviceKey(device)
+        if let cached = locked({ muteCache[key] }) { return cached }
+        let elements = (0...device.channelCount).filter {
             var property = address(kAudioDevicePropertyMute, output: true, element: $0)
             return AudioObjectHasProperty(device.id, &property)
         }
+        locked {
+            muteCache = muteCache.filter { $0.key.id != device.id }
+            muteCache[key] = elements
+        }
+        return elements
+    }
+
+    public func invalidateControlCache(deviceID: UInt32?) {
+        locked {
+            if let deviceID {
+                volumeCache = volumeCache.filter { $0.key.id != deviceID }
+                muteCache = muteCache.filter { $0.key.id != deviceID }
+            } else {
+                volumeCache.removeAll(keepingCapacity: true)
+                muteCache.removeAll(keepingCapacity: true)
+            }
+        }
+    }
+
+    private func verifyIdentity(_ device: OutputDevice) throws {
+        guard let uid = try? string(device.id, address(kAudioDevicePropertyDeviceUID)), uid == device.uid else {
+            invalidateControlCache(deviceID: device.id)
+            throw StaleAudioDevice()
+        }
+    }
+
+    private func locked<T>(_ work: () -> T) -> T {
+        cacheLock.lock()
+        defer { cacheLock.unlock() }
+        return work()
     }
 
     private func outputChannelCount(_ id: AudioDeviceID) throws -> UInt32 {
@@ -232,8 +298,17 @@ public final class CoreAudioHardware: VolumeHardware, OutputDeviceCatalog {
     }
 
     private func string(_ id: AudioObjectID, _ property: AudioObjectPropertyAddress) throws -> String {
-        let value: CFString = try scalar(id, property, initial: "" as CFString)
-        return value as String
+        var property = property
+        var value: Unmanaged<CFString>?
+        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+        let status = AudioObjectGetPropertyData(id, &property, 0, nil, &size, &value)
+        try check(status, "Read audio string", objectID: id, property: property)
+        guard let value else {
+            throw AudioFailure(operation: "Read empty audio string", status: kAudioHardwareUnspecifiedError,
+                               objectID: id, propertySelector: property.mSelector, propertyScope: property.mScope)
+        }
+        // These properties return an owned CFString (AudioHardwareBase.h).
+        return value.takeRetainedValue() as String
     }
 
     private func array<T>(_ id: AudioObjectID, _ property: AudioObjectPropertyAddress) throws -> [T] {

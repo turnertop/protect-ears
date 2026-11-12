@@ -84,22 +84,25 @@ public final class GuardEngine {
         var learned: Set<String> = []
 
         for device in devices {
-            let selected = device.isAirPodsMax || pinnedUIDs.contains(device.uid)
+            let known = pinnedUIDs.contains(device.uid)
+            let automatic = !known && device.isAirPodsMax
+            let selected = known || automatic
             guard selected else {
                 reports.append(DeviceReport(device: device, state: .unselected, volume: nil,
                                             muted: false, detail: nil))
                 continue
             }
-            if device.isAirPodsMax { learned.insert(device.uid) }
+            if automatic { learned.insert(device.uid) }
 
             do {
                 let controls = try hardware.volumeControls(for: device)
                 guard !controls.isEmpty else { throw GuardFailure.noVolumeControl }
                 var didLower = false
+                var values: [Float] = []
 
                 for control in controls {
                     var current = try validVolume(control, device)
-                    guard current > limit.scalar + 0.00001 else { continue }
+                    guard current > limit.scalar + 0.00001 else { values.append(current); continue }
 
                     // Drivers can quantize a requested value upward. Retry below the
                     // ceiling, and verify the value rather than trusting a successful write.
@@ -112,10 +115,11 @@ public final class GuardEngine {
                         throw GuardFailure.didNotAcceptLimit
                     }
                     didLower = true
+                    values.append(current)
                 }
 
                 // Re-read every control: changing a virtual control can affect others.
-                let finalValues = try controls.map { try validVolume($0, device) }
+                let finalValues = didLower ? try controls.map { try validVolume($0, device) } : values
                 guard finalValues.allSatisfy({ $0 <= limit.scalar + 0.00001 }) else {
                     throw GuardFailure.didNotAcceptLimit
                 }
@@ -128,6 +132,9 @@ public final class GuardEngine {
                     detail: previouslyMuted ? "Muted after an earlier control error. Check volume before unmuting in Sound settings." : nil
                 ))
                 if didLower { clamped += 1 }
+            } catch is StaleAudioDevice {
+                reports.append(DeviceReport(device: device, state: .failed, volume: nil, muted: false,
+                                            detail: StaleAudioDevice().localizedDescription))
             } catch {
                 let muted = hardware.emergencyMute(device)
                 if muted { emergencyUIDs.insert(device.uid) }

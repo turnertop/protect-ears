@@ -1,6 +1,6 @@
 # Verification checklist
 
-Last updated: **2026-11-11**. Baseline: **v1.0.1**, commit `19102ee`.
+Last updated: **2026-11-11**. Current implementation: **v1.0.2**. Previous baseline: **v1.0.1**, commit `19102ee`.
 
 This is a backlog for later; nothing here needs to be done immediately. Keep the current four/five-step volume guard and focus on detection, reconnects, and stability.
 
@@ -16,6 +16,17 @@ This is a backlog for later; nothing here needs to be done immediately. Keep the
 - [x] The fix was installed locally and published as [v1.0.1](https://github.com/turnertop/protect-ears/releases/tag/v1.0.1).
 
 The live test used a programmatic volume request. It did **not** establish keyboard/Digital Crown behavior, automatic reconnect reliability, a maximum correction time, or prevention of every transient. CI uses simulated hardware, not physical Bluetooth headphones.
+
+## v1.0.2 latency and resource checks
+
+- [x] All **49 simulated-hardware checks** passed locally. New monitor checks verify correction while discovery is deliberately blocked, 10,000-notification bursts without repeated inventory scans/listener installation, bounded configuration-event discovery, fallback correction, no volume polling without selected outputs, stale reconnect scans, coalesced identity delivery, serialized HAL reset, and shutdown. Policy checks cover the quiet-pass read budget and rejecting stale identities without muting unrelated devices.
+- [x] The actual running universal app detected AirPods Max with the saved **five-step / 31.25%** ceiling on an Apple silicon Mac running macOS 14.4.1.
+- [x] A controlled, silent **60-request** test passed with playback paused and the headphones off-head, out of the case, and muted. A paused-guard negative control retained six steps for 200 ms. With the guard running, 30 requests at a nominal 120 ms cadence and 30 at a nominal 40 ms cadence each returned to five before the next request. Observed first-corrected readings: **20.87 ms median, 24.10 ms p95, 25.86 ms maximum**. No request accumulated past six. These are observations from one run, not response-time guarantees. An earlier attempt stopped after 20 requests during test-harness validation and was not counted as a completed run.
+- [x] After the test, Sound settings verified the headphone volume at **31.25%**. The headphones remained muted after harness cleanup; their original **unmuted** setting was restored in Sound settings and verified. The original **Mac speaker output, 25%, unmuted** was then restored and verified.
+- [x] A **20-second connected idle sample** of the same app process measured **0.40% of one CPU core**, with a stable **25.44 MiB physical memory footprint**. CPU time used `proc_pid_rusage` counters converted from Mach ticks with `mach_timebase_info`. This short sample does not establish battery impact or long-session memory behavior.
+- [x] Both universal slices built locally; ad-hoc signature, DMG integrity, ZIP integrity, and archive checksums passed.
+
+The volume requests used Core Audio, not physical keyboard or Digital Crown input. The remaining physical reconnect, profile-change, wake, login, and long-session checks below still apply. A separate read-only diagnostic is not evidence that the running app enforced a cap.
 
 ## Remaining checks
 

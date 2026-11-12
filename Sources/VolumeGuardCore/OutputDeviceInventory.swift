@@ -13,6 +13,14 @@ public struct OutputDeviceInventory {
     public let systemListFailed: Bool
     public let failedRememberedUIDs: Set<String>
     public var needsClientRecovery: Bool { systemListFailed || !failedRememberedUIDs.isEmpty }
+
+    public init(devices: [OutputDevice], issues: [String] = [], systemListFailed: Bool = false,
+                failedRememberedUIDs: Set<String> = []) {
+        self.devices = devices
+        self.issues = issues
+        self.systemListFailed = systemListFailed
+        self.failedRememberedUIDs = failedRememberedUIDs
+    }
 }
 
 /// A broken/disappearing device must not prevent inspecting the other outputs.

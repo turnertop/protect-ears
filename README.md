@@ -49,7 +49,8 @@ AirPods Max are recognized by their output-device name. The app remembers their 
 - Responds to volume notifications, device changes, output-route changes, wake, and Core Audio service restarts.
 - Inspects devices independently, so one unsupported or disappearing virtual device cannot cancel the whole scan. Uses the default outputs and remembered headphone identities as fallback discovery paths.
 - Reinitializes this app's Core Audio connection after repeated discovery failures. Refresh requests the same recovery, with a cooldown to prevent reset loops.
-- Checks output volume every 250 ms as a fallback and checks the device list every second. These intervals are scheduling targets, not real-time deadlines.
+- Corrects volume on a dedicated queue using cached headphone controls, independently of full device discovery. Duplicate notifications are combined, and unchanged state does not trigger UI updates.
+- Checks selected output volume every 100 ms as a fallback. Discovery runs every five seconds when healthy, every second while waiting/recovering, and on connection/profile changes. Volume polling stops when no selected headphones are connected. These intervals are scheduling targets, not real-time deadlines.
 - Checks main and individual output-channel controls when exposed by the device, falling back to its virtual main-volume control.
 - Lowers values above the ceiling and verifies the result. It never raises a quiet volume or unmutes a device.
 - Attempts to mute the selected device if the volume cannot be read, capped, or verified. A warning remains visible after an emergency mute; you must inspect and unmute manually.
@@ -57,7 +58,7 @@ AirPods Max are recognized by their output-device name. The app remembers their 
 
 ## Limits
 
-**This is a reactive guard, not a strict audio-path limiter.** Core Audio reports volume changes after they occur. A brief spike can reach the headphones before the app corrects it, especially during connection, route/profile changes, wake, scheduling delays, or a driver failure. A 250 ms fallback does not establish a maximum possible response time.
+**This is a reactive guard, not a strict audio-path limiter.** Core Audio reports volume changes after they occur. A brief spike can reach the headphones before the app corrects it, especially during connection, route/profile changes, wake, scheduling delays, or a driver failure. A 100 ms fallback does not establish a maximum possible response time.
 
 The guard cannot enforce a ceiling while it is stopped, during startup before it can access a device, or while the AirPods are connected to a different computer/phone. Some device/driver volume controls may not be exposed. A green/running status means the latest volume check passed; it does not prove that no transient sound can pass.
 
@@ -72,7 +73,7 @@ zsh scripts/check.sh
 "dist/Protect Ears.app/Contents/MacOS/ProtectEars" --diagnose
 ```
 
-The check runner simulates device controls, repeated spikes, channel imbalance, UID-based reconnection, renaming, read/write failures, rejected writes, hardware rounding, and emergency muting. It does not change real devices. `--diagnose` lists live output devices and volume controls without changing them.
+The check runner simulates device controls, repeated spikes, channel imbalance, UID-based reconnection, renaming, read/write failures, rejected writes, hardware rounding, and emergency muting. Monitor checks also cover stalled discovery, notification bursts, stale reconnect scans, bounded background work, and recovery serialization. They do not change real devices. `--diagnose` lists live output devices and volume controls without changing them.
 
 If headphones are connected but missing from the app, click Refresh. Version 1.0.1 and later can recover this app's Core Audio connection when discovery fails. An error includes the failing audio object and property so a future report can identify the affected query. If detection is unavailable, the volume ceiling cannot be verified.
 
@@ -82,7 +83,7 @@ For a real-device check, pause all playback and keep the headphones off your ear
 
 ## Development
 
-`Sources/VolumeGuardCore` contains the serial monitor, Core Audio adapter, and hardware-independent enforcement policy. `Sources/ProtectEars` contains the AppKit menu-bar host and SwiftUI controls. `Checks` contains the simulated-hardware checks and a dependency-free runner, so full Xcode/XCTest is unnecessary.
+`Sources/VolumeGuardCore` contains the volume monitor, background discovery, Core Audio adapter, and hardware-independent enforcement policy. `Sources/ProtectEars` contains the AppKit menu-bar host and SwiftUI controls. `Checks` contains the simulated-hardware checks and a dependency-free runner, so full Xcode/XCTest is unnecessary.
 
 The default build script creates a locally ad-hoc-signed app in `dist` for the current Mac architecture. It is not notarized. For distribution without the unidentified-developer warning or a stable signed login-item identity, build and sign with your own Developer ID and submit it for notarization.
 
